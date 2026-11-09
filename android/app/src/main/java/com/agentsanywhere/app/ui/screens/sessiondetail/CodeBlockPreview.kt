@@ -98,6 +98,22 @@ internal fun SoraCodeBlock(
     }
     val shape = RoundedCornerShape(12.dp)
     val border = if (darkMode) Color(0xFF27272A) else Color(0xFFE4E1DB)
+    var editorCrash by remember { mutableStateOf(false) }
+    if (editorCrash) {
+        Text(
+            text = text,
+            color = if (darkMode) Color(0xFFFAFAFA) else Color(0xFF191A18),
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            modifier = modifier
+                .fillMaxWidth()
+                .clip(shape)
+                .background(if (darkMode) Color(0xFF18181B) else Color(0xFFF4F4F5))
+                .border(1.dp, border, shape)
+                .padding(12.dp),
+        )
+        return
+    }
     val viewModifier = (fixedHeight?.let { modifier.fillMaxWidth().height(it) }
         ?: modifier.fillMaxWidth().heightIn(min = 64.dp, max = maxHeight))
         .then(if (framed) Modifier.clip(shape).border(1.dp, border, shape) else Modifier)
@@ -105,75 +121,85 @@ internal fun SoraCodeBlock(
     AndroidView(
         modifier = viewModifier,
         factory = { ctx ->
-            CodeEditor(ctx).apply {
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                )
-                editorRef[0] = this
-                reading?.selectionReaders?.set(codeKey) { cursor.isSelected }
-                subscribeEvent(SelectionChangeEvent::class.java) { _, _ -> reading?.invalidate() }
-                configureReadOnlyCodeEditor(
+            try {
+                CodeEditor(ctx).apply {
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                    )
+                    editorRef[0] = this
+                    reading?.selectionReaders?.set(codeKey) { cursor.isSelected }
+                    subscribeEvent(SelectionChangeEvent::class.java) { _, _ -> reading?.invalidate() }
+                    configureReadOnlyCodeEditor(
+                        darkMode = darkMode,
+                        editorBackground = editorBackground,
+                        verticalScrollEnabled = verticalScrollEnabled,
+                        horizontalTouchOnly = horizontalTouchOnly,
+                        scalable = scalable,
+                    )
+                }
+            } catch (e: Throwable) {
+                editorCrash = true
+                CodeEditor(ctx)
+            }
+        },
+        update = { editor ->
+            if (editorCrash) return@AndroidView
+            try {
+                val previous = editor.tag as? SoraEditorState
+                val languageKey = SoraTextMate.languageKeyFor(languageHint)
+                val highlights = diffHighlights.toMap()
+                val textChanged = editor.text.toString() != text
+                SoraTextMate.ensureReady(context)
+                if (previous?.darkMode != darkMode) {
+                    editor.colorScheme = SoraTextMate.colorScheme(darkMode)
+                }
+                val configuration = listOf(darkMode, editorBackground?.toArgb(), verticalScrollEnabled, horizontalTouchOnly, scalable)
+                if (previous?.configuration != configuration) editor.configureReadOnlyCodeEditor(
                     darkMode = darkMode,
                     editorBackground = editorBackground,
                     verticalScrollEnabled = verticalScrollEnabled,
                     horizontalTouchOnly = horizontalTouchOnly,
                     scalable = scalable,
                 )
+                if (textChanged) {
+                    val previousText = editor.text.toString()
+                    val position = if (previous != null) editor.offsetX to editor.offsetY
+                        else reading?.codePositions?.get(codeKey) ?: (0 to 0)
+                    val cursor = editor.cursor
+                    val selection = if (cursor.isSelected && text.startsWith(previousText))
+                        intArrayOf(cursor.leftLine, cursor.leftColumn, cursor.rightLine, cursor.rightColumn) else null
+                    editor.setText(text)
+                    if (selection != null) editor.setSelectionRegion(selection[0], selection[1], selection[2], selection[3])
+                    val x = position.first.coerceIn(0, editor.scrollMaxX)
+                    val y = position.second.coerceIn(0, editor.scrollMaxY)
+                    editor.scroller.forceFinished(true)
+                    editor.scroller.startScroll(x, y, 0, 0, 0)
+                    editor.invalidate()
+                    reading?.codePositions?.set(codeKey, x to y)
+                }
+                if (previous?.languageKey != languageKey || previous.highlights != highlights) {
+                    val language = TracingLanguage(
+                        base = SoraTextMate.languageFor(languageHint),
+                        label = languageHint.orEmpty().substringAfterLast('/').ifBlank { "unknown" },
+                    )
+                    editor.setEditorLanguage(
+                        if (diffHighlights.isEmpty()) {
+                            language
+                        } else {
+                            DiffDecoratingLanguage(
+                                base = language,
+                                highlights = diffHighlights,
+                                addedLineColor = if (darkMode) 0xFF163820.toInt() else 0xFFDDF8E7.toInt(),
+                                deletedLineColor = if (darkMode) 0xFF411C1C.toInt() else 0xFFFFE1E1.toInt(),
+                            )
+                        },
+                    )
+                }
+                editor.tag = SoraEditorState(darkMode = darkMode, languageKey = languageKey, highlights = highlights, configuration = configuration)
+            } catch (e: Throwable) {
+                editorCrash = true
             }
-        },
-        update = { editor ->
-            val previous = editor.tag as? SoraEditorState
-            val languageKey = SoraTextMate.languageKeyFor(languageHint)
-            val highlights = diffHighlights.toMap()
-            val textChanged = editor.text.toString() != text
-            SoraTextMate.ensureReady(context)
-            if (previous?.darkMode != darkMode) {
-                editor.colorScheme = SoraTextMate.colorScheme(darkMode)
-            }
-            val configuration = listOf(darkMode, editorBackground?.toArgb(), verticalScrollEnabled, horizontalTouchOnly, scalable)
-            if (previous?.configuration != configuration) editor.configureReadOnlyCodeEditor(
-                darkMode = darkMode,
-                editorBackground = editorBackground,
-                verticalScrollEnabled = verticalScrollEnabled,
-                horizontalTouchOnly = horizontalTouchOnly,
-                scalable = scalable,
-            )
-            if (textChanged) {
-                val previousText = editor.text.toString()
-                val position = if (previous != null) editor.offsetX to editor.offsetY
-                    else reading?.codePositions?.get(codeKey) ?: (0 to 0)
-                val cursor = editor.cursor
-                val selection = if (cursor.isSelected && text.startsWith(previousText))
-                    intArrayOf(cursor.leftLine, cursor.leftColumn, cursor.rightLine, cursor.rightColumn) else null
-                editor.setText(text)
-                if (selection != null) editor.setSelectionRegion(selection[0], selection[1], selection[2], selection[3])
-                val x = position.first.coerceIn(0, editor.scrollMaxX)
-                val y = position.second.coerceIn(0, editor.scrollMaxY)
-                editor.scroller.forceFinished(true)
-                editor.scroller.startScroll(x, y, 0, 0, 0)
-                editor.invalidate()
-                reading?.codePositions?.set(codeKey, x to y)
-            }
-            if (previous?.languageKey != languageKey || previous.highlights != highlights) {
-                val language = TracingLanguage(
-                    base = SoraTextMate.languageFor(languageHint),
-                    label = languageHint.orEmpty().substringAfterLast('/').ifBlank { "unknown" },
-                )
-                editor.setEditorLanguage(
-                    if (diffHighlights.isEmpty()) {
-                        language
-                    } else {
-                        DiffDecoratingLanguage(
-                            base = language,
-                            highlights = diffHighlights,
-                            addedLineColor = if (darkMode) 0xFF163820.toInt() else 0xFFDDF8E7.toInt(),
-                            deletedLineColor = if (darkMode) 0xFF411C1C.toInt() else 0xFFFFE1E1.toInt(),
-                        )
-                    },
-                )
-            }
-            editor.tag = SoraEditorState(darkMode = darkMode, languageKey = languageKey, highlights = highlights, configuration = configuration)
         },
     )
 }
@@ -193,61 +219,69 @@ internal fun SoraFilePreview(
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
-            CodeEditor(ctx).apply {
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                )
-                configureReadOnlyCodeEditor(
-                    darkMode = darkMode,
-                    editorBackground = editorBackground,
-                    verticalScrollEnabled = true,
-                    horizontalTouchOnly = false,
-                    scalable = true,
-                )
-                searchController.attach(this, onSearchResult)
+            try {
+                CodeEditor(ctx).apply {
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                    )
+                    configureReadOnlyCodeEditor(
+                        darkMode = darkMode,
+                        editorBackground = editorBackground,
+                        verticalScrollEnabled = true,
+                        horizontalTouchOnly = false,
+                        scalable = true,
+                    )
+                    searchController.attach(this, onSearchResult)
+                }
+            } catch (e: Throwable) {
+                CodeEditor(ctx)
             }
         },
         update = { editor ->
-            val previous = editor.tag as? SoraFileEditorState
-            val languageKey = SoraTextMate.languageKeyFor(languageHint)
-            val textChanged = editor.text.toString() != text
-            val backgroundArgb = editorBackground?.toArgb()
-                ?: if (darkMode) 0xFF09090B.toInt() else 0xFFFFFFFF.toInt()
-            SoraTextMate.ensureReady(context)
-            if (previous?.darkMode != darkMode) {
-                editor.colorScheme = SoraTextMate.colorScheme(darkMode)
-            }
-            if (previous == null || previous.darkMode != darkMode || previous.backgroundArgb != backgroundArgb) {
-                editor.configureReadOnlyCodeEditor(
+            try {
+                val previous = editor.tag as? SoraFileEditorState
+                val languageKey = SoraTextMate.languageKeyFor(languageHint)
+                val textChanged = editor.text.toString() != text
+                val backgroundArgb = editorBackground?.toArgb()
+                    ?: if (darkMode) 0xFF09090B.toInt() else 0xFFFFFFFF.toInt()
+                SoraTextMate.ensureReady(context)
+                if (previous?.darkMode != darkMode) {
+                    editor.colorScheme = SoraTextMate.colorScheme(darkMode)
+                }
+                if (previous == null || previous.darkMode != darkMode || previous.backgroundArgb != backgroundArgb) {
+                    editor.configureReadOnlyCodeEditor(
+                        darkMode = darkMode,
+                        editorBackground = editorBackground,
+                        verticalScrollEnabled = true,
+                        horizontalTouchOnly = false,
+                        scalable = true,
+                    )
+                }
+                if (textChanged) {
+                    editor.setText(text)
+                }
+                if (previous?.languageKey != languageKey) {
+                    editor.setEditorLanguage(
+                        TracingLanguage(
+                            base = SoraTextMate.languageFor(languageHint),
+                            label = languageHint.orEmpty().substringAfterLast('/').ifBlank { "unknown" },
+                        ),
+                    )
+                }
+                searchController.attach(editor, onSearchResult)
+                if (previous?.searchQuery != searchQuery || textChanged) {
+                    searchController.search(searchQuery)
+                }
+                editor.tag = SoraFileEditorState(
                     darkMode = darkMode,
-                    editorBackground = editorBackground,
-                    verticalScrollEnabled = true,
-                    horizontalTouchOnly = false,
-                    scalable = true,
+                    languageKey = languageKey,
+                    searchQuery = searchQuery,
+                    backgroundArgb = backgroundArgb,
                 )
+            } catch (e: Throwable) {
+                // Ignore
             }
-            if (textChanged) {
-                editor.setText(text)
-            }
-            if (previous?.languageKey != languageKey) {
-                editor.setEditorLanguage(
-                    TracingLanguage(
-                        base = SoraTextMate.languageFor(languageHint),
-                        label = languageHint.orEmpty().substringAfterLast('/').ifBlank { "unknown" },
-                    ),
-                )
-            }
-            searchController.attach(editor, onSearchResult)
-            if (previous?.searchQuery != searchQuery || textChanged) {
-                searchController.search(searchQuery)
-            }
-            editor.tag = SoraFileEditorState(
-                darkMode = darkMode,
-                languageKey = languageKey,
-                searchQuery = searchQuery,
-                backgroundArgb = backgroundArgb,
-            )
         },
     )
 }

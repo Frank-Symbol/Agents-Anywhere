@@ -13,7 +13,7 @@ import com.agentsanywhere.app.R
 
 private val AAWordmarkFontFamily = FontFamily(
     Font(R.font.caveat_wght, weight = FontWeight.Medium),
-)
+).runCatching { this }.getOrElse { FontFamily.Default }
 
 @Composable
 fun AAWordmark(

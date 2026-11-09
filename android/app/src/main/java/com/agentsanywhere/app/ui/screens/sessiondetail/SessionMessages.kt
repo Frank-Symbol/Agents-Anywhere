@@ -130,7 +130,7 @@ private const val LOAD_OLDER_VISIBLE_THRESHOLD = 3
 private const val RETURN_TO_LATEST_ANIMATION_WINDOW = 12
 private val SessionWelcomeFontFamily = FontFamily(
     Font(R.font.newsreader_opsz_wght, FontWeight(650)),
-)
+).runCatching { this }.getOrElse { FontFamily.Default }
 
 internal sealed interface TimelineRenderItem {
     val key: String
