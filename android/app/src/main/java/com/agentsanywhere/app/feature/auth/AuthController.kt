@@ -202,15 +202,16 @@ class AuthController(
 
         return withContext(Dispatchers.IO) {
             runCatching {
-                sessionStore.saveServerUrl(payload.serverUrl)
                 api.requestMobileLogin(
                     serverUrl = payload.serverUrl,
                     userId = payload.userId,
                     loginToken = payload.loginToken,
                     deviceName = deviceName,
                 )
+                currentCoroutineContext().ensureActive()
                 payload
             }.recoverCatching { error ->
+                if (error is CancellationException) throw error
                 if (error is ApiException) throw error
                 throw IllegalStateException(error.message ?: "QR sign-in request failed.", error)
             }
@@ -227,6 +228,7 @@ class AuthController(
                     loginToken = payload.loginToken,
                 )
             }.recoverCatching { error ->
+                if (error is CancellationException) throw error
                 if (error is ApiException) throw error
                 throw IllegalStateException(error.message ?: "Could not check QR sign-in status.", error)
             }
@@ -243,8 +245,10 @@ class AuthController(
                     userId = payload.userId,
                     loginToken = payload.loginToken,
                 )
+                currentCoroutineContext().ensureActive()
                 sessionStore.saveMobileAuthSession(payload.serverUrl, exchange)
             }.recoverCatching { error ->
+                if (error is CancellationException) throw error
                 if (error is ApiException) throw error
                 throw IllegalStateException(error.message ?: "Could not complete QR sign-in.", error)
             }

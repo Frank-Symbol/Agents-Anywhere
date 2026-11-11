@@ -73,6 +73,7 @@
 
 ### Android
 
+- 扫码登录失败或取消时不再提前更改已保存的服务器；二维码失效后停止反复查询，内置登录页中的子页面也不会触发登录回调。
 - Agent 连接断开后，没有原生历史的会话可以点「恢复会话」接着用。（[#591](https://github.com/anywhere-labs/Agents-Anywhere/pull/591)）
 - Android 的「模型渠道」与 Web、Desktop 相同：首页列出渠道和「已应用」，点进渠道后再应用、查看配置和 Runtime；Tokens Anywhere 按「账户／模型与连接／Runtime」分页，可以退出账户。（[#515](https://github.com/anywhere-labs/Agents-Anywhere/pull/515)）
 - 所选 Agent 换了模型渠道后，Android 新建会话页会重新准备并刷新模型列表，不再停留在旧渠道的模型上。（[#587](https://github.com/anywhere-labs/Agents-Anywhere/pull/587)）

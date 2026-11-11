@@ -47,11 +47,22 @@ Use JDK 17 and the Android SDK matching `compileSdk` in `app/build.gradle.kts`
 ```
 
 On Windows use `gradlew.bat`. Outputs are under `app/build/outputs/apk/`.
-The checked-in release build type does not define a signing configuration;
-`assembleRelease` alone does not produce a distributable signed update. Apply the
-release signing process with the existing keystore and keep that identity for
-future updates. Do not commit passwords or keystores. Changing the signature
-prevents an in-place update of an installed app signed with another key.
+For signed builds set `ANDROID_SIGNING_STORE_FILE` (absolute keystore path),
+`ANDROID_SIGNING_STORE_PASSWORD`, `ANDROID_SIGNING_KEY_ALIAS`, and
+`ANDROID_SIGNING_KEY_PASSWORD` in the build environment. Both debug and release
+use this key when all four variables are present; a partial configuration fails.
+Without these variables debug uses the local debug key and release is unsigned.
+Never commit the keystore or passwords. An in-place update requires the same
+signing identity as the installed APK; version number alone is not enough.
+
+The Android 7 GitHub Actions workflow requires repository secrets
+`ANDROID_KEYSTORE_BASE64` (base64-encoded original keystore),
+`ANDROID_SIGNING_STORE_PASSWORD`, `ANDROID_SIGNING_KEY_ALIAS`, and
+`ANDROID_SIGNING_KEY_PASSWORD`. It refuses to build if any secret is missing,
+so it cannot silently publish an APK signed with a temporary debug key. Before
+releasing, compare the SHA-256 signing certificate digest of the resulting APK
+with that of the APK already installed on the target device. If the original key
+was lost, a new key cannot provide a data-preserving upgrade on Android 7.
 
 `local.properties` remains machine-specific and ignored. The manifest allows
 HTTP for local/self-hosted addresses; use HTTPS for public service endpoints.

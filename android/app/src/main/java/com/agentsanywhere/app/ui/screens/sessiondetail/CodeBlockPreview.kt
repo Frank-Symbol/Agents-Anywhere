@@ -3,12 +3,17 @@ package com.agentsanywhere.app.ui.screens.sessiondetail
 import android.content.Context
 import android.graphics.Typeface
 import android.os.Bundle
+import android.os.Build
+import android.view.View
 import android.text.InputType
 import android.util.Log
 import android.view.MotionEvent
 import android.widget.FrameLayout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -107,17 +112,19 @@ internal fun SoraCodeBlock(
     val shape = RoundedCornerShape(12.dp)
     val border = if (darkMode) Color(0xFF27272A) else Color(0xFFE4E1DB)
     var editorCrash by remember { mutableStateOf(false) }
-    if (editorCrash) {
+    if (editorCrash || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
         Text(
             text = text,
             color = if (darkMode) Color(0xFFFAFAFA) else Color(0xFF191A18),
             fontFamily = FontFamily.Monospace,
             fontSize = 12.sp,
-            modifier = modifier
-                .fillMaxWidth()
+            modifier = (fixedHeight?.let { modifier.fillMaxWidth().height(it) }
+                ?: modifier.fillMaxWidth().heightIn(min = 64.dp, max = maxHeight))
                 .clip(shape)
-                .background(if (darkMode) Color(0xFF18181B) else Color(0xFFF4F4F5))
-                .border(1.dp, border, shape)
+                .background(editorBackground ?: if (darkMode) Color(0xFF18181B) else Color(0xFFF4F4F5))
+                .then(if (framed) Modifier.border(1.dp, border, shape) else Modifier)
+                .verticalScroll(rememberScrollState(), enabled = verticalScrollEnabled)
+                .horizontalScroll(rememberScrollState())
                 .padding(12.dp),
         )
         return
@@ -146,12 +153,18 @@ internal fun SoraCodeBlock(
                         scalable = scalable,
                     )
                 }
-            } catch (e: Throwable) {
+            } catch (e: Exception) {
+                Log.e(TEXTMATE_LOG_TAG, "Failed to create code editor", e)
                 editorCrash = true
-                CodeEditor(ctx)
+                View(ctx)
+            } catch (e: LinkageError) {
+                Log.e(TEXTMATE_LOG_TAG, "Failed to link code editor", e)
+                editorCrash = true
+                View(ctx)
             }
         },
-        update = { editor ->
+        update = { view ->
+            val editor = view as? CodeEditor ?: return@AndroidView
             if (editorCrash) return@AndroidView
             try {
                 val previous = editor.tag as? SoraEditorState
@@ -205,7 +218,11 @@ internal fun SoraCodeBlock(
                     )
                 }
                 editor.tag = SoraEditorState(darkMode = darkMode, languageKey = languageKey, highlights = highlights, configuration = configuration)
-            } catch (e: Throwable) {
+            } catch (e: Exception) {
+                Log.e(TEXTMATE_LOG_TAG, "Failed to update code editor", e)
+                editorCrash = true
+            } catch (e: LinkageError) {
+                Log.e(TEXTMATE_LOG_TAG, "Failed to link code editor", e)
                 editorCrash = true
             }
         },
@@ -224,6 +241,11 @@ internal fun SoraFilePreview(
     editorBackground: Color? = null,
 ) {
     val context = LocalContext.current
+    var editorCrash by remember { mutableStateOf(false) }
+    if (editorCrash) {
+        Text(text = text, modifier = modifier, color = if (darkMode) Color.White else Color.Black, fontFamily = FontFamily.Monospace)
+        return
+    }
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
@@ -242,11 +264,18 @@ internal fun SoraFilePreview(
                     )
                     searchController.attach(this, onSearchResult)
                 }
-            } catch (e: Throwable) {
-                CodeEditor(ctx)
+            } catch (e: Exception) {
+                Log.e(TEXTMATE_LOG_TAG, "Failed to create file editor", e)
+                editorCrash = true
+                View(ctx)
+            } catch (e: LinkageError) {
+                Log.e(TEXTMATE_LOG_TAG, "Failed to link file editor", e)
+                editorCrash = true
+                View(ctx)
             }
         },
-        update = { editor ->
+        update = { view ->
+            val editor = view as? CodeEditor ?: return@AndroidView
             try {
                 val previous = editor.tag as? SoraFileEditorState
                 val languageKey = SoraTextMate.languageKeyFor(languageHint)
@@ -287,8 +316,12 @@ internal fun SoraFilePreview(
                     searchQuery = searchQuery,
                     backgroundArgb = backgroundArgb,
                 )
-            } catch (e: Throwable) {
-                // Ignore
+            } catch (e: Exception) {
+                Log.e(TEXTMATE_LOG_TAG, "Failed to update file editor", e)
+                editorCrash = true
+            } catch (e: LinkageError) {
+                Log.e(TEXTMATE_LOG_TAG, "Failed to link file editor", e)
+                editorCrash = true
             }
         },
     )

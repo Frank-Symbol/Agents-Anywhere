@@ -19,6 +19,16 @@ fun String.asBuildConfigString(): String = "\"" + replace("\\", "\\\\")
     .replace("\n", "\\n")
     .replace("\r", "\\r") + "\""
 
+val signingStoreFile = providers.environmentVariable("ANDROID_SIGNING_STORE_FILE").orNull
+val signingStorePassword = providers.environmentVariable("ANDROID_SIGNING_STORE_PASSWORD").orNull
+val signingKeyAlias = providers.environmentVariable("ANDROID_SIGNING_KEY_ALIAS").orNull
+val signingKeyPassword = providers.environmentVariable("ANDROID_SIGNING_KEY_PASSWORD").orNull
+val signingValues = listOf(signingStoreFile, signingStorePassword, signingKeyAlias, signingKeyPassword)
+require(signingValues.all { it.isNullOrBlank() } || signingValues.all { !it.isNullOrBlank() }) {
+    "Set all four ANDROID_SIGNING_* variables, or none of them."
+}
+val hasConfiguredSigning = signingValues.all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.agentsanywhere.app"
     compileSdk = 36
@@ -27,8 +37,8 @@ android {
         applicationId = "com.agentsanywhere.app"
         minSdk = 24
         targetSdk = 36
-        versionCode = 12
-        versionName = "2.2.1"
+        versionCode = 13
+        versionName = "2.2.2"
         buildConfigField("String", "OFFICIAL_SERVER_URL", officialServerUrl.asBuildConfigString())
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -37,11 +47,26 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasConfiguredSigning) {
+            create("provided") {
+                storeFile = file(signingStoreFile!!)
+                storePassword = signingStorePassword
+                keyAlias = signingKeyAlias
+                keyPassword = signingKeyPassword
+                enableV1Signing = true
+                enableV2Signing = true
+            }
+        }
+    }
+
     buildTypes {
         debug {
+            if (hasConfiguredSigning) signingConfig = signingConfigs.getByName("provided")
             buildConfigField("String", "OFFICIAL_SERVER_URL", debugServerUrl.asBuildConfigString())
         }
         release {
+            if (hasConfiguredSigning) signingConfig = signingConfigs.getByName("provided")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

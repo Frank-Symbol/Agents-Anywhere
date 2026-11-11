@@ -56,6 +56,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.agentsanywhere.app.R
+import com.agentsanywhere.app.api.ApiException
 import com.agentsanywhere.app.api.AuthApi
 import com.agentsanywhere.app.feature.auth.AuthController
 import com.agentsanywhere.app.feature.auth.AuthSessionStore
@@ -219,7 +220,9 @@ fun QrWaitingScreen(
             val statusResult = authController.mobileLoginStatus(payload)
             val status = statusResult.getOrNull()
             if (status == null) {
-                state = state.copy(errorMessage = statusResult.exceptionOrNull()?.message ?: context.getString(R.string.qr_status_failed))
+                val error = statusResult.exceptionOrNull()
+                state = state.copy(errorMessage = error?.message ?: context.getString(R.string.qr_status_failed))
+                if (error is ApiException && error.statusCode in setOf(401, 404)) return@LaunchedEffect
                 delay(1_600)
                 continue
             }

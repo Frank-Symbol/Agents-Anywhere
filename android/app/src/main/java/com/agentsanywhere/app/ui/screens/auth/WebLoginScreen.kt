@@ -338,6 +338,10 @@ private class SecureLoginWebViewClient(
     }
 
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest): Boolean {
+        if (!request.isForMainFrame) {
+            val scheme = request.url.scheme?.lowercase()
+            return scheme != "http" && scheme != "https"
+        }
         return handleUrl(request.url.toString())
     }
 
